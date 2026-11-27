@@ -50,3 +50,6 @@ Swagger UI ada di `/docs` setiap service. Untuk Postman: `npm run docs` di tiap 
 - Reservasi slot atomik (`UPDATE ... WHERE is_booked = FALSE`), sehingga dua booking tidak bisa mengambil slot yang sama.
 - Jika penyimpanan booking gagal setelah slot dipesan, Booking Service membebaskan slot kembali (kompensasi manual).
 - Operasi tulis di Workshop Service dilindungi header `x-api-key` bila `INTERNAL_API_KEY` diatur.
+
+
+Kelompok 3

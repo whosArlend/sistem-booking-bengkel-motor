@@ -1,8 +1,5 @@
 # Sistem Booking Servis Bengkel Motor
 
-> **Tugas Besar Mata Kuliah Sistem Terintegrasi &mdash; Semester Ganjil 2026/2027**  
-> *Batas Pengumpulan Laporan & Presentasi: 13 Desember 2026*
-
 Repository ini berisi implementasi sistem informasi booking servis bengkel motor berbasis arsitektur **dua microservice Node.js (Express)** yang berkomunikasi secara terintegrasi menggunakan protokol **HTTP REST API**.
 
 ---

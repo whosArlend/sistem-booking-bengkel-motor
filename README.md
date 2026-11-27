@@ -175,163 +175,27 @@ Perintah ini membaca definisi rute dan meng-export file `docs/openapi.json` yang
 Gunakan perintah `curl` berikut di terminal untuk mendemonstrasikan seluruh alur pengujian integrasi:
 
 ```bash
-# Definisi URL variabel
-W="https://bengkel-workshop-service.vercel.app"
-B="http://localhost:3000"
-KEY="bengkel-secret-key-2026"
+W=https://<proyek>.vercel.app   # Workshop Service
+B=http://localhost:3000         # Booking Service
+
+curl $W/slots?is_booked=false                      # lihat slot kosong
+curl -X POST $B/bookings -H 'Content-Type: application/json' \
+  -d '{"customer_id":1,"motorcycle_id":1,"service_id":1,"slot_id":1,"complaint_note":"Ganti oli"}'
+curl $B/bookings/1                                 # detail (digabung data Workshop)
+curl -X PUT $B/bookings/1 -H 'Content-Type: application/json' -d '{"status":"confirmed"}'
+curl -X PUT $B/bookings/1 -H 'Content-Type: application/json' -d '{"slot_id":2}'   # reschedule
+curl -X POST $B/bookings -H 'Content-Type: application/json' \
+  -d '{"customer_id":1,"motorcycle_id":1,"service_id":1,"slot_id":2}'               # 409: slot sudah terisi
+curl -X DELETE $B/bookings/1                       # batal, slot dibuka kembali
 ```
 
-### Skenario 1: Cek Ketersediaan Slot Jadwal di Cloud
-```bash
-curl -X GET "$W/slots?is_booked=false"
-```
-*Ekspektasi:* Mengembalikan array slot jadwal dengan `is_booked: false` (Status `200 OK`).
+## 4. Dokumentasi API
 
----
+Swagger UI ada di `/docs` setiap service. Untuk Postman: `npm run docs` di tiap service menghasilkan `docs/openapi.json`, lalu **Import** di Postman.
 
-### Skenario 2: Pembuatan Booking Baru (`201 Created`)
-```bash
-curl -X POST "$B/bookings" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customer_id": 1,
-    "motorcycle_id": 1,
-    "service_id": 1,
-    "slot_id": 1,
-    "complaint_note": "Ganti oli mesin dan servis rutin"
-  }'
-```
-*Ekspektasi:* 
-- Mengembalikan data booking dengan status **`201 Created`**.
-- Slot `1` pada `workshop-service` di Vercel otomatis berubah menjadi `is_booked: true`.
-- Respons sudah diperkaya dengan objek `service`, `slot`, dan `mechanic`.
+## Catatan desain
 
----
-
-### Skenario 3: Melihat Detail Booking Lengkap
-```bash
-curl -X GET "$B/bookings/1"
-```
-*Ekspektasi:* Mengembalikan detail booking nomor `1` beserta data gabungan dari cloud (Status `200 OK`).
-
----
-
-### Skenario 4: Reschedule Jadwal ke Slot Baru
-```bash
-curl -X PUT "$B/bookings/1" \
-  -H "Content-Type: application/json" \
-  -d '{"slot_id": 2}'
-```
-*Ekspektasi:* Slot `1` otomatis dilepas kembali (`is_booked: false`), slot `2` dikunci (`is_booked: true`), dan data booking lokal diperbarui (Status `200 OK`).
-
----
-
-### Skenario 5: Uji Konflik Slot Ganda (`409 Conflict`)
-Coba buat booking baru yang menargetkan slot `2` yang baru saja dipesan pada skenario 4:
-```bash
-curl -X POST "$B/bookings" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customer_id": 1,
-    "motorcycle_id": 1,
-    "service_id": 1,
-    "slot_id": 2
-  }'
-```
-*Ekspektasi:* Sistem menolak transaksi dan mengembalikan status **`409 Conflict`**:
-```json
-{
-  "error": "Slot sudah dibooking"
-}
-```
-
----
-
-### Skenario 6: Pembatalan Booking & Pembebasan Slot
-```bash
-curl -X DELETE "$B/bookings/1"
-```
-*Ekspektasi:* Data booking dihapus (Status `200 OK`) dan slot `2` di `workshop-service` otomatis dibebaskan kembali (`is_booked: false`).
-
----
-
-### Skenario 7: Uji Keamanan Autentikasi Internal (`401 Unauthorized`)
-Coba ubah status slot secara langsung ke `workshop-service` tanpa header `x-api-key`:
-```bash
-curl -X PUT "$W/slots/1" \
-  -H "Content-Type: application/json" \
-  -d '{"is_booked": true}'
-```
-*Ekspektasi:* Server cloud menolak request dengan status **`401 Unauthorized`**:
-```json
-{
-  "error": "API key tidak valid"
-}
-```
-
----
-
-### Skenario 8: Uji Penanganan Downtime Layanan Eksternal (`502 Bad Gateway`)
-Jika `WORKSHOP_URL` pada `booking-service/.env` tidak dapat dihubungi atau mengalami timeout (melebihi batas toleransi 8 detik), panggilan API booking akan memutus transaksi secara aman dan menghasilkan respons:
-```json
-{
-  "error": "Workshop Service tidak dapat dihubungi"
-}
-```
-*(Status HTTP `502 Bad Gateway`)*, mencegah terjadinya data *orphan* atau inkonsistensi status slot.
-
----
-
-## 5. Struktur Direktori Proyek
-
-```
-sistem-booking-bengkel-motor/
-├── booking-service/              # Layanan Pelanggan & Booking (Lokal)
-│   ├── db/
-│   │   └── schema.sql            # DDL Tabel customers, motorcycles, bookings
-│   ├── docs/
-│   │   └── openapi.json          # File OpenAPI Specification (Swagger)
-│   ├── scripts/
-│   │   └── export-openapi.js     # Script generator openapi.json
-│   ├── src/
-│   │   ├── app.js                # Inisialisasi Express & konfigurasi routing
-│   │   ├── bookings.js           # Business logic booking & transaksi kompensasi
-│   │   ├── crud.js               # Handler standar operasi CRUD database
-│   │   ├── db.js                 # Pool connection PostgreSQL lokal
-│   │   ├── docs.js               # Render UI Swagger HTML
-│   │   ├── openapi.js            # Definisi skema rute OpenAPI
-│   │   ├── server.js             # Entry point HTTP server lokal
-│   │   └── workshopClient.js     # HTTP client pemanggil Workshop Service
-│   ├── .env.example              # Template variabel lingkungan booking-service
-│   └── package.json
-│
-├── workshop-service/             # Layanan Bengkel & Slot (Vercel Cloud)
-│   ├── api/
-│   │   └── index.js              # Entry point Vercel Serverless Function
-│   ├── db/
-│   │   └── schema.sql            # DDL Tabel services, mechanics, slots
-│   ├── docs/
-│   │   └── openapi.json          # File OpenAPI Specification (Swagger)
-│   ├── scripts/
-│   │   └── export-openapi.js     # Script generator openapi.json
-│   ├── src/
-│   │   ├── app.js                # Routing, middleware auth, & Swagger
-│   │   ├── crud.js               # Handler standar operasi CRUD database
-│   │   ├── db.js                 # Pool connection Neon PostgreSQL Cloud (SSL)
-│   │   ├── docs.js               # Render UI Swagger HTML
-│   │   ├── openapi.js            # Definisi skema rute OpenAPI
-│   │   ├── server.js             # Entry point Express lokal (fallback)
-│   │   └── slotReserve.js        # Logic reservasi slot atomik (WHERE is_booked=FALSE)
-│   ├── .env.example              # Template variabel lingkungan workshop-service
-│   ├── package.json
-│   └── vercel.json               # Konfigurasi rewrites deployment Vercel
-│
-├── .gitignore                    # Mengabaikan node_modules, .env, .vercel
-└── README.md                     # Dokumentasi arsitektur, panduan, dan skenario uji
-```
-
----
-
-## 6. Anggota Tim & Kontribusi
-
-Proyek ini disusun untuk memenuhi evaluasi Tugas Besar mata kuliah **Sistem Terintegrasi** (Semester Ganjil 2026/2027). Seluruh konfigurasi, implementasi logika transaksi terdistribusi, serta skenario pengujian telah divalidasi end-to-end.
+- `service_id` dan `slot_id` di tabel `bookings` adalah referensi logis (bukan foreign key) karena datanya ada di database service lain.
+- Reservasi slot atomik (`UPDATE ... WHERE is_booked = FALSE`), sehingga dua booking tidak bisa mengambil slot yang sama.
+- Jika penyimpanan booking gagal setelah slot dipesan, Booking Service membebaskan slot kembali (kompensasi manual).
+- Operasi tulis di Workshop Service dilindungi header `x-api-key` bila `INTERNAL_API_KEY` diatur.
